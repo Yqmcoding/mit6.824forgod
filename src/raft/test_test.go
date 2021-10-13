@@ -8,12 +8,21 @@ package raft
 // test with the original before submitting.
 //
 
-import "testing"
-import "fmt"
-import "time"
-import "math/rand"
-import "sync/atomic"
-import "sync"
+import (
+	"context"
+	"fmt"
+	"log"
+	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
@@ -1084,3 +1093,38 @@ func TestSnapshotInstallCrash2D(t *testing.T) {
 func TestSnapshotInstallUnCrash2D(t *testing.T) {
 	snapcommon(t, "Test (2D): install snapshots (unreliable+crash)", false, false, true)
 }
+
+func TestMain(m *testing.M) {
+  log.SetFlags(log.LstdFlags|log.Lmicroseconds)
+  go func() {
+    log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+  }()
+  ctx,cancel:=context.WithCancel(context.Background())
+  defer cancel()
+  go func(ctx context.Context){
+    for {
+      select {
+      case <-ctx.Done():return
+      default:
+      }
+      if runtime.NumGoroutine() > 6000 {
+        ctx,cancel:=context.WithCancel(context.Background())
+        go func(){
+          f,err:=os.Create("goroutines")
+          if err!=nil{
+            f=os.Stdout
+          } else {
+            defer f.Close()
+          }
+          pprof.Lookup("goroutine").WriteTo(f, 2)
+          cancel()
+        }()
+        <-ctx.Done()
+      }
+    }
+  }(ctx)
+  code:=m.Run()
+  cancel()
+  os.Exit(code)
+}
+
