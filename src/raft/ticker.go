@@ -8,7 +8,7 @@ import (
 func (rf *Raft) electionTicker() {
   rf.wg.Add(1)
   defer rf.wg.Done()
-  time.Sleep(rf.getRandomElectionTime())
+  time.Sleep(getRandomElectionTime())
 	for !rf.killed() {
     ch:=make(chan time.Duration,1)
     rf.events<-&ElectionTimeoutEvent{ch}
@@ -21,12 +21,12 @@ type ElectionTimeoutEvent struct {
 }
 
 func (e *ElectionTimeoutEvent) Run(rf *Raft) {
-  if rf.status == LEADER {
+  if rf.status == LEADER || rf.status == PRECANDIDATE {
     rf.resetTimer()
   }
   now:=time.Now()
   if now.After(rf.endTime) {
-    rf.changeStatus(rf.CurrentTerm+1, CANDIDATE)
+    rf.changeStatus(rf.CurrentTerm, PRECANDIDATE)
   }
   e.sleepTime<-rf.endTime.Sub(now)
 }
@@ -53,7 +53,7 @@ func(e *InstallSnapshotEvent) Run(rf *Raft) {
 func (rf *Raft) installSnapshotTicker(idx int) {
   rf.wg.Add(1)
   defer rf.wg.Done()
-  time.Sleep(rf.getRandomElectionTime())
+  time.Sleep(getRandomElectionTime())
   for !rf.killed() {
     time.Sleep(HeartbeatTime)
     ctx,cancel:=context.WithCancel(context.TODO())
@@ -90,7 +90,7 @@ func(e *HeartbeatEvent) Run(rf *Raft) {
 func (rf *Raft) heartbeatTicker(idx int) {
   rf.wg.Add(1)
   defer rf.wg.Done()
-  time.Sleep(rf.getRandomElectionTime())
+  time.Sleep(getRandomElectionTime())
   for !rf.killed() {
     time.Sleep(HeartbeatTime)
     ctx,cancel:=context.WithCancel(context.TODO())
@@ -103,7 +103,7 @@ func (rf *Raft) heartbeatTicker(idx int) {
 func (rf *Raft) applyTicker() {
   rf.wg.Add(1)
   defer rf.wg.Done()
-  time.Sleep(rf.getRandomElectionTime())
+  time.Sleep(getRandomElectionTime())
   for !rf.killed() {
     time.Sleep(10*time.Millisecond)
     ctx,cancel:=context.WithCancel(context.TODO())
@@ -115,7 +115,7 @@ func (rf *Raft) applyTicker() {
 func (rf *Raft) requestVoteTicker(idx int) {
   rf.wg.Add(1)
   defer rf.wg.Done()
-  time.Sleep(rf.getRandomElectionTime())
+  time.Sleep(getRandomElectionTime())
   for !rf.killed() {
     time.Sleep(HeartbeatTime)
     ctx,cancel:=context.WithCancel(context.TODO())

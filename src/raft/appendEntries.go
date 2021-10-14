@@ -166,6 +166,9 @@ func (e *RespondAppendEntriesEvent) Run(rf *Raft) {
   if args.Term > rf.CurrentTerm {
     rf.changeStatus(args.Term, FOLLOWER)
   }
+  if rf.status != FOLLOWER {
+    rf.changeStatus(rf.CurrentTerm, FOLLOWER)
+  }
   rf.resetTimer()
   realPrevLogIndex:=rf.getRealLogIndex(args.PrevLogIndex)
   if realPrevLogIndex >= 0 && (realPrevLogIndex >= len(rf.Log) || rf.Log[realPrevLogIndex].Term != args.PrevLogTerm) {

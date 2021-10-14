@@ -105,28 +105,15 @@ type Raft struct {
   endTime time.Time
   lastLog RaftLog
   maxProcessId int
-  candidateFailTimes int32
 
   RaftPersistState
   RaftLeaderState
   RaftCandidateState
 }
 
-func (rf *Raft) incCandidateFailTimes() {
-  atomic.AddInt32(&rf.candidateFailTimes,1)
-}
-
-func (rf *Raft) getCandidateFailTimes() int32 {
-  return atomic.LoadInt32(&rf.candidateFailTimes)
-}
-
-func (rf *Raft) clearCandidateFailTimes() {
-  atomic.StoreInt32(&rf.candidateFailTimes, 0)
-}
-
 func (rf *Raft) resetTimer(){
   rf.lastHeartbeatTime = time.Now()
-  rf.endTime = rf.lastHeartbeatTime.Add(rf.getRandomElectionTime())
+  rf.endTime = rf.lastHeartbeatTime.Add(getRandomElectionTime())
 }
 
 // return currentTerm and whether this server
@@ -293,6 +280,7 @@ func statusName(status int) string {
   case LEADER:return "leader"
   case FOLLOWER:return "follower"
   case CANDIDATE:return "candidate"
+  case PRECANDIDATE:return "pre-candidate"
   default:return fmt.Sprint(status)
   }
 }
@@ -326,8 +314,13 @@ func (rf *Raft) initLeader() {
   }
 }
 func (rf *Raft) initCandidate() {
-  rf.incCandidateFailTimes()
   rf.VoteFor = rf.me
+  rf.votes = 0
+  rf.hasResponse = make([]bool, rf.n)
+  rf.beginElection()
+}
+
+func (rf *Raft) initPreCandidate() {
   rf.votes = 0
   rf.hasResponse = make([]bool, rf.n)
   rf.beginElection()
@@ -346,12 +339,9 @@ func (rf *Raft) changeStatus(term int, status int) {
   if rf.status == LEADER { rf.clearLeaderState() }
   if rf.status == CANDIDATE { rf.clearCandidateState() }
   rf.status = status
+  if rf.status == PRECANDIDATE { rf.initPreCandidate() }
   if rf.status == LEADER { rf.initLeader() }
-  if rf.status == CANDIDATE {
-    rf.initCandidate()
-  } else {
-    rf.clearCandidateFailTimes()
-  }
+  if rf.status == CANDIDATE { rf.initCandidate() }
 }
 
 func (rf *Raft) changeVoteFor(to int) {
