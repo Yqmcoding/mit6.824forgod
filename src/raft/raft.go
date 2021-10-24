@@ -73,7 +73,7 @@ type RaftLeaderState struct {
 
 type RaftCandidateState struct {
   votes int
-  hasResponse []bool
+  hasVote []bool
 }
 
 //
@@ -294,7 +294,7 @@ func (rf *Raft) clearLeaderState() {
 }
 func (rf *Raft) clearCandidateState() {
   rf.votes=0
-  rf.hasResponse=nil
+  rf.hasVote=nil
 }
 func (rf *Raft) initLeader() {
   rf.matchIdx = make([]int, rf.n)
@@ -316,13 +316,13 @@ func (rf *Raft) initLeader() {
 func (rf *Raft) initCandidate() {
   rf.VoteFor = rf.me
   rf.votes = 0
-  rf.hasResponse = make([]bool, rf.n)
+  rf.hasVote = make([]bool, rf.n)
   rf.beginElection()
 }
 
 func (rf *Raft) initPreCandidate() {
   rf.votes = 0
-  rf.hasResponse = make([]bool, rf.n)
+  rf.hasVote = make([]bool, rf.n)
   rf.beginElection()
 }
 

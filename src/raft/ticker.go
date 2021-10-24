@@ -26,7 +26,11 @@ func (e *ElectionTimeoutEvent) Run(rf *Raft) {
   }
   now:=time.Now()
   if now.After(rf.endTime) {
-    rf.changeStatus(rf.CurrentTerm, PRECANDIDATE)
+    if rf.status == CANDIDATE {
+      rf.changeStatus(rf.CurrentTerm + 1, PRECANDIDATE)
+    } else if rf.status != PRECANDIDATE {
+      rf.changeStatus(rf.CurrentTerm, PRECANDIDATE)
+    }
   }
   e.sleepTime<-rf.endTime.Sub(now)
 }

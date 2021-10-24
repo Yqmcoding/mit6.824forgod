@@ -55,9 +55,6 @@ func (e *RequestVoteEvent) Run(rf *Raft) {
   if rf.status != CANDIDATE && rf.status != PRECANDIDATE {
     return
   }
-  if rf.hasResponse[e.idx] {
-    return
-  }
   args:=RequestVoteArgs{
     Term: rf.CurrentTerm,
     CandidateId: rf.me,
@@ -84,16 +81,18 @@ type ProcessRequestVoteRespondEvent struct {
 }
 
 func (e *ProcessRequestVoteRespondEvent) Run(rf *Raft) {
-  // change this
   args,reply:=e.args,e.reply
-  if args.Term != rf.CurrentTerm || (rf.status != CANDIDATE && rf.status != PRECANDIDATE) || rf.hasResponse[e.idx] {
+  if args.Term != rf.CurrentTerm || (rf.status != CANDIDATE && rf.status != PRECANDIDATE) || rf.hasVote[e.idx] {
     return
   }
-  rf.hasResponse[e.idx]=true
   if reply.Term > rf.CurrentTerm {
     rf.changeStatus(reply.Term, FOLLOWER)
   } else {
     if reply.VoteGranted {
+      if rf.hasVote[e.idx] {
+        return
+      }
+      rf.hasVote[e.idx]=true
       rf.votes++
       if rf.votes >= rf.n/2 {
         if rf.status == PRECANDIDATE {
@@ -131,7 +130,9 @@ func (e *RespondRequestVoteEvent) Run(rf *Raft) {
     return
   }
   if args.PreVote {
-    reply.VoteGranted = true
+    if args.Term >= rf.CurrentTerm && rf.status == PRECANDIDATE && rf.hasVote != nil && !rf.hasVote[args.CandidateId] {
+      reply.VoteGranted = true
+    }
     return
   }
   if args.Term > rf.CurrentTerm {
