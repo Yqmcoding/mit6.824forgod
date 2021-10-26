@@ -16,13 +16,11 @@ type RequestVoteReply struct {
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-  rf.wg.Add(1)
-  defer rf.wg.Done()
   if rf.killed() {
     return
   }
-  ctx, cancel:=context.WithCancel(context.TODO())
-  rf.events<-&RespondRequestVoteEvent{args,reply,cancel}
+  ctx, cancel:=context.WithCancel(rf.background)
+  go rf.sendEvent(&RespondRequestVoteEvent{args,reply,cancel})
   <-ctx.Done()
 }
 
@@ -34,11 +32,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 func (rf *Raft) beginElection() {
   for i:=range rf.peers {
     if i != rf.me {
-      select {
-      case rf.events<-&RequestVoteEvent{i,nil}:continue
-      default:
-        DPrintf("%v eventloop is full, fail to push RequestVoteEvent", rf.me)
-      }
+      go rf.sendEvent(&RequestVoteEvent{i,nil})
     }
   }
 }
@@ -63,12 +57,10 @@ func (e *RequestVoteEvent) Run(rf *Raft) {
     PreVote: rf.status == PRECANDIDATE,
   }
   go func(){
-    rf.wg.Add(1)
-    defer rf.wg.Done()
     var reply RequestVoteReply
     DPrintf("%v sendRequestVote to %v args %+v", rf.me, e.idx, args)
     if rf.sendRequestVote(e.idx,&args,&reply) {
-      rf.events<-&ProcessRequestVoteRespondEvent{e.idx,&args,&reply}
+      go rf.sendEvent(&ProcessRequestVoteRespondEvent{e.idx,&args,&reply})
       DPrintf("%v sendRequestVote to %v args %+v reply %+v", rf.me, e.idx, args, reply)
     }
   }()
@@ -112,8 +104,15 @@ type RespondRequestVoteEvent struct {
 }
 
 // return other is later than me
-func (rf *Raft) checkLater(lastLogIndex, lastLogTerm int) bool {
-  return lastLogTerm > rf.getLastLogTerm() || (lastLogTerm == rf.getLastLogTerm() && lastLogIndex >= rf.getLastLogIndex())
+func (rf *Raft) checkLater(lastLogIndex, lastLogTerm int) int {
+  if lastLogTerm == rf.getLastLogTerm() && lastLogIndex == rf.getLastLogIndex() {
+    return 0
+  }
+  if lastLogTerm > rf.getLastLogTerm() || (lastLogTerm == rf.getLastLogTerm() && lastLogIndex > rf.getLastLogIndex()) {
+    return 1
+  } else {
+    return -1
+  }
 }
 
 func (e *RespondRequestVoteEvent) Run(rf *Raft) {
@@ -126,11 +125,11 @@ func (e *RespondRequestVoteEvent) Run(rf *Raft) {
     return
   }
   voteGranted:=rf.checkLater(args.LastLogIndex, args.LastLogTerm)
-  if !voteGranted {
+  if voteGranted < 0 {
     return
   }
   if args.PreVote {
-    if args.Term >= rf.CurrentTerm && rf.status == PRECANDIDATE && rf.hasVote != nil && !rf.hasVote[args.CandidateId] {
+    if args.Term >= rf.CurrentTerm && rf.status == PRECANDIDATE && (voteGranted == 1 || args.CandidateId < rf.me) {
       reply.VoteGranted = true
     }
     return

@@ -12,24 +12,30 @@ import (
 func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
 
 	// Your code here (2D).
-  ch:=make(chan bool,1)
-  rf.events<-&CondInstallSnapshotEvent{lastIncludedIndex,lastIncludedTerm,snapshot,ch}
-  return <-ch
+  var result bool
+  ctx,cancel:=context.WithCancel(rf.background)
+  go rf.sendEvent(&CondInstallSnapshotEvent{lastIncludedIndex,lastIncludedTerm,snapshot,&result,cancel})
+  <-ctx.Done()
+  return result
 }
 
 type CondInstallSnapshotEvent struct {
   lastIncludedIndex int
   lastIncludedTerm int
   snapshot []byte
-  result chan bool
+  result *bool
+  finish context.CancelFunc
 }
 
 func (e *CondInstallSnapshotEvent) Run(rf *Raft) {
+  if e.finish != nil {
+    defer e.finish()
+  }
   if rf.LastIncludedIndex == e.lastIncludedIndex && rf.LastIncludedTerm == e.lastIncludedTerm && rf.snapshotInstalling {
     rf.snapshotInstalling = false
-    e.result<-true
+    *e.result=true
   } else {
-    e.result<-false
+    *e.result=false
   }
 }
 
@@ -39,7 +45,7 @@ func (e *CondInstallSnapshotEvent) Run(rf *Raft) {
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
-  rf.events<-&SnapshotEvent{index,snapshot}
+  go rf.sendEvent(&SnapshotEvent{index,snapshot})
 }
 
 type SnapshotEvent struct {
@@ -50,7 +56,7 @@ type SnapshotEvent struct {
 func (e *SnapshotEvent) Run(rf *Raft) {
   log,err:=rf.getLogByIndex(e.index)
   if err!=nil {
-    panic(fmt.Sprintf("%v fail to snapshot with index %v", rf.me, e.index))
+    panic(fmt.Sprintf("%v fail to snapshot with index %v Log %+v", rf.me, e.index, LogsOutline(rf.Log)))
   }
   rf.changeSnapshot(log.Index, log.Term, e.snapshot)
 }
@@ -70,13 +76,12 @@ type InstallSnapshotReply struct {
 }
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
-  rf.wg.Add(1)
-  defer rf.wg.Done()
   if rf.killed() {
     return
   }
-  ctx, cancel:=context.WithCancel(context.TODO())
-  rf.events<-&RespondInstallSnapshotEvent{args,reply,cancel}
+  DPrintf("%v get Snapshot rpc from %v args %+v", rf.me, args.LeaderId, args)
+  ctx, cancel:=context.WithCancel(rf.background)
+  go rf.sendEvent(&RespondInstallSnapshotEvent{args,reply,cancel})
   <-ctx.Done()
 }
 
@@ -86,7 +91,6 @@ func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply
 }
 
 func (rf *Raft) installSnapshotToPeer(idx int) {
-  // TODO
   args:=InstallSnapshotArgs{
     Id:rf.rpcCount[idx],
     Peer: idx,
@@ -97,11 +101,9 @@ func (rf *Raft) installSnapshotToPeer(idx int) {
     Data: rf.CurrentSnapshot,
   }
   go func(){
-    rf.wg.Add(1)
-    defer rf.wg.Done()
     var reply InstallSnapshotReply
     if rf.sendInstallSnapshot(idx, &args, &reply) {
-      rf.events<-&ProcessInstallSnapshotRespondEvent{idx,&args,&reply}
+      go rf.sendEvent(&ProcessInstallSnapshotRespondEvent{idx,&args,&reply})
     }
   }()
 }
@@ -166,15 +168,16 @@ func (rf *Raft) changeSnapshot(index int, term int, snapshot []byte){
   rf.LastIncludedIndex = index
   rf.LastIncludedTerm = term
   rf.CurrentSnapshot = snapshot
+  rf.applied = rf.LastIncludedIndex
   rf.installSnapshot()
 }
 
 func (rf *Raft) installSnapshot(){
+  rf.snapshotInstalling = true
   rf.applyCh <- ApplyMsg{
     SnapshotValid: true,
     Snapshot: rf.CurrentSnapshot,
     SnapshotTerm: rf.LastIncludedTerm,
     SnapshotIndex: rf.LastIncludedIndex,
   }
-  rf.snapshotInstalling = true
 }

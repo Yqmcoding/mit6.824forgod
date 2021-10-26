@@ -64,13 +64,12 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-  rf.wg.Add(1)
-  defer rf.wg.Done()
   if rf.killed() {
     return
   }
-  ctx, cancel:=context.WithCancel(context.TODO())
-  rf.events<-&RespondAppendEntriesEvent{args,reply,cancel}
+  DPrintf("%v get AppendEntries rpc from %v args %+v", rf.me, args.LeaderId, args)
+  ctx, cancel:=context.WithCancel(rf.background)
+  go rf.sendEvent(&RespondAppendEntriesEvent{args,reply,cancel})
   <-ctx.Done()
 }
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
@@ -99,17 +98,15 @@ func (rf *Raft) appendEntriesToPeer(idx int) {
     LeaderId: rf.me,
     PrevLogIndex: prevLogIndex,
     PrevLogTerm: prevLogTerm,
-    Entries: rf.getLog(rf.nextIdx[idx],len(rf.Log)),
+    Entries: rf.getLog(rf.nextIdx[idx],rf.lastLog.Index+1),
     LeaderCommit: rf.commitIndex,
   }
   go func(){
-    rf.wg.Add(1)
-    defer rf.wg.Done()
     var reply AppendEntriesReply
     DPrintf("%v send AppendEntries to %v args %+v", rf.me, idx, &args)
     if rf.sendAppendEntries(idx,&args,&reply) {
       DPrintf("%v send AppendEntries to %v args %+v reply %+v", rf.me, idx, &args, reply)
-      rf.events<-&ProcessAppendEntriesRespondEvent{idx,&args,&reply}
+      go rf.sendEvent(&ProcessAppendEntriesRespondEvent{idx,&args,&reply})
     } else {
       DPrintf("%v send AppendEntries to %v args %+v no reply", rf.me, idx, &args)
     }
@@ -158,7 +155,6 @@ func (e *RespondAppendEntriesEvent) Run(rf *Raft) {
     defer e.finish()
   }
   args,reply:=e.args,e.reply
-  defer DPrintf("%v get AppendEntries rpc from %v args %+v reply %+v", rf.me, args.LeaderId, args, reply)
   if args.Term < rf.CurrentTerm {
     reply.Term = rf.CurrentTerm
     return

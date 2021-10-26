@@ -1097,7 +1097,7 @@ func TestSnapshotInstallUnCrash2D(t *testing.T) {
 func TestMain(m *testing.M) {
   log.SetFlags(log.LstdFlags|log.Lmicroseconds)
   go func() {
-    log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+    log.Println(http.ListenAndServe("0.0.0.0:6063", nil))
   }()
   ctx,cancel:=context.WithCancel(context.Background())
   defer cancel()

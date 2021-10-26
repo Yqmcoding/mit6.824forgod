@@ -16,6 +16,8 @@ func (rf *Raft) getLogByIndex(index int) (*RaftLog,error) {
   realIndex:=rf.getRealLogIndex(index)
   if realIndex >= 0 && realIndex < len(rf.Log) {
     return &rf.Log[realIndex], nil
+  } else if realIndex == -1 {
+    return &RaftLog{Index:rf.LastIncludedIndex,Term:rf.LastIncludedTerm}, nil
   } else {
     return nil, fmt.Errorf("index %v realIndex %v rf.Log %+v index out of bounds", index, realIndex, LogsOutline(rf.Log))
   }

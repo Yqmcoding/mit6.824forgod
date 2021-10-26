@@ -98,13 +98,13 @@ type Raft struct {
   events chan Event
   background context.Context
   backgroundCancel context.CancelFunc
-  wg sync.WaitGroup
   applyCh chan ApplyMsg
 
   lastHeartbeatTime time.Time
   endTime time.Time
   lastLog RaftLog
   maxProcessId int
+  quickSend []chan struct{}
 
   RaftPersistState
   RaftLeaderState
@@ -119,18 +119,23 @@ func (rf *Raft) resetTimer(){
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-  ch:=make(chan struct{Term int; IsLeader bool},1)
-  rf.events<-&GetStateEvent{ch}
-  result:=<-ch
+  var result struct {Term int; IsLeader bool}
+  ctx,cancel:=context.WithCancel(rf.background)
+  go rf.sendEvent(&GetStateEvent{&result,cancel})
+  <-ctx.Done()
   return result.Term,result.IsLeader
 }
 
 type GetStateEvent struct {
-  result chan struct {Term int; IsLeader bool}
+  result *struct {Term int; IsLeader bool}
+  finish context.CancelFunc
 }
 
 func (e *GetStateEvent) Run(rf *Raft) {
-  e.result<-struct{Term int; IsLeader bool}{rf.CurrentTerm,rf.status==LEADER}
+  if e.finish != nil {
+    defer e.finish()
+  }
+  *e.result=struct{Term int; IsLeader bool}{rf.CurrentTerm,rf.status==LEADER}
 }
 
 //
@@ -166,8 +171,7 @@ func (rf *Raft) readPersist(data []byte) {
   rf.RaftPersistState = raftPersistState
   rf.updateLastLog()
   if rf.LastIncludedIndex != -1 {
-    rf.applied = rf.LastIncludedIndex
-    rf.installSnapshot()
+    go rf.sendEvent(&SnapshotEvent{rf.LastIncludedIndex,rf.CurrentSnapshot})
   }
 }
 
@@ -187,18 +191,23 @@ func (rf *Raft) readPersist(data []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-  ch:=make(chan struct{index int; term int; isLeader bool},1)
-  rf.events<-&StartEvent{command,ch}
-  result:=<-ch
+  var result struct{index int; term int; isLeader bool}
+  ctx,cancel:=context.WithCancel(rf.background)
+  go rf.sendEvent(&StartEvent{command,&result,cancel})
+  <-ctx.Done()
   return result.index,result.term,result.isLeader
 }
 
 type StartEvent struct {
   command interface{}
-  result chan struct {index int; term int; isLeader bool}
+  result *struct {index int; term int; isLeader bool}
+  finish context.CancelFunc
 }
 
 func (e *StartEvent) Run(rf *Raft) {
+  if e.finish != nil {
+    defer e.finish()
+  }
   if rf.status == LEADER {
     log:=RaftLog{
       Index: rf.getLastLogIndex()+1,
@@ -207,9 +216,10 @@ func (e *StartEvent) Run(rf *Raft) {
     }
     rf.appendLog([]RaftLog{log})
     DPrintf("%v get log %+v", rf.me, log)
-    e.result<-struct{index int; term int; isLeader bool}{log.Index,log.Term,true}
+    rf.setQuickSendAll()
+    *e.result=struct{index int; term int; isLeader bool}{log.Index,log.Term,true}
   } else {
-    e.result<-struct{index int; term int; isLeader bool}{0,0,false}
+    *e.result=struct{index int; term int; isLeader bool}{0,0,false}
   }
 }
 
@@ -226,10 +236,10 @@ func (e *StartEvent) Run(rf *Raft) {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
-  rf.backgroundCancel()
   ctx,cancel:=context.WithCancel(context.Background())
-  rf.events<-&KillEvent{cancel}
+  go rf.sendEvent(&KillEvent{cancel})
   <-ctx.Done()
+  DPrintf("%v killed", rf.me)
 }
 
 type KillEvent struct {
@@ -238,6 +248,7 @@ type KillEvent struct {
 
 func (e *KillEvent) Run(rf *Raft) {
 	atomic.StoreInt32(&rf.dead, 1)
+  rf.backgroundCancel()
   e.cancel()
 }
 
@@ -247,32 +258,18 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) eventloop(){
-  end:=false
+  defer close(rf.applyCh)
   for {
     select {
-      case <-rf.background.Done():{
-        if !end {
-          end = true
-          go func() {
-            time.Sleep(10*time.Second)
-            rf.wg.Wait()
-            DPrintf("%v all goroutine finished", rf.me)
-            close(rf.events)
-          }()
-        }
-      }
+      case <-rf.background.Done(): return
       case event,ok:=<-rf.events:
-        if ok {
+        if ok && !rf.killed() {
           // DPrintf("%v run event %T%+v", rf.me, event, event)
           event.Run(rf)
           // DPrintf("%v run event %T%+v done", rf.me, event, event)
-        } else {
-          goto end
         }
     }
   }
-  end:
-  close(rf.applyCh)
 }
 
 func statusName(status int) string {
@@ -303,15 +300,9 @@ func (rf *Raft) initLeader() {
   rf.rpcProcessCount = make([]int, rf.n)
   rf.peerSnapshotInstall = make([]bool, rf.n)
   for i:=range rf.nextIdx {
-    rf.nextIdx[i]=len(rf.Log)
-    if i!=rf.me {
-      select {
-      case rf.events<-&HeartbeatEvent{i,nil}:continue
-      default:
-        DPrintf("%v eventloop is full, fail to push HeartbeatEvent", rf.me)
-      }
-    }
+    rf.nextIdx[i]=rf.lastLog.Index+1
   }
+  rf.setQuickSendAll()
 }
 func (rf *Raft) initCandidate() {
   rf.VoteFor = rf.me
@@ -351,6 +342,22 @@ func (rf *Raft) changeVoteFor(to int) {
   }
 }
 
+func (rf *Raft) applyLoop(applyCh chan ApplyMsg) {
+  defer close(applyCh)
+  for {
+    select {
+      case <-rf.background.Done():return
+      case msg,ok:=<-rf.applyCh:
+        if ok {
+          select {
+          case applyCh<-msg:
+          case <-rf.background.Done(): return
+          }
+        }
+    }
+  }
+}
+
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}
@@ -359,13 +366,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
   rf.n=len(rf.peers)
   rf.events = make(chan Event, EventChanLength)
-  rf.applyCh = applyCh
+  rf.applyCh = make(chan ApplyMsg, ApplyChanLength)
   rf.background, rf.backgroundCancel = context.WithCancel(context.Background())
-  rf.wg = sync.WaitGroup{}
 
   rf.Log=make([]RaftLog, 1)
   rf.LastIncludedIndex = -1
   rf.LastIncludedTerm = -1
+  rf.quickSend=make([]chan struct{}, rf.n)
+  for i:=range rf.quickSend {
+    rf.quickSend[i]=make(chan struct{},1)
+  }
 
 	// Your initialization code here (2A, 2B, 2C).
 
@@ -373,6 +383,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
+  go rf.applyLoop(applyCh)
 	go rf.electionTicker()
   go rf.eventloop()
   go rf.applyTicker()
