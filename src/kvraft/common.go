@@ -1,5 +1,7 @@
 package kvraft
 
+import "context"
+
 const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
@@ -8,26 +10,33 @@ const (
 
 type Err string
 
-// Put or Append
-type PutAppendArgs struct {
-	Key   string
-	Value string
-	Op    string // "Put" or "Append"
-	// You'll have to add definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
+type RPCEvent struct {
+  triggerId int64
+  term int
+  reply ErrorReply
+  done context.CancelFunc
+  opType OpType
 }
 
-type PutAppendReply struct {
-	Err Err
-}
-
-type GetArgs struct {
-	Key string
-	// You'll have to add definitions here.
-}
-
-type GetReply struct {
-	Err   Err
-	Value string
+func (e *RPCEvent) Run(kv *KVServer) {
+  e.reply.setError(ErrWrongLeader)
+  if e.term != kv.term {
+    if e.done != nil {
+      defer e.done()
+    }
+    return
+  }
+  ctx,cancel:=context.WithCancel(kv.leaderCtx)
+  kv.rpcTrigger[e.triggerId]=rpcState{
+    cancel: cancel,
+    opType: e.opType,
+    reply: e.reply,
+    term: e.term,
+  }
+  go func(){
+    if e.done != nil {
+      defer e.done()
+      <-ctx.Done()
+    }
+  }()
 }
