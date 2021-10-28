@@ -2,7 +2,6 @@ package kvraft
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -21,13 +20,6 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-type rpcState struct {
-  cancel context.CancelFunc
-  opType OpType
-  reply interface{}
-  term int
-}
-
 type KVServer struct {
 	mu      sync.Mutex
 	me      int
@@ -39,8 +31,7 @@ type KVServer struct {
 
 	// Your definitions here.
 
-  data map[string]string
-  lastApplied int
+  stateMachine StateMachine
 
   background context.Context
   backgroundCancel context.CancelFunc
@@ -48,35 +39,11 @@ type KVServer struct {
   leaderCancel context.CancelFunc
   events chan kvEvent
   term int
+  lastApplied int
 
-  rpcTrigger map[int64]rpcState
-  triggerCount int64
+  triggers map[int64]Trigger
+  TriggerCount int64
 }
-
-type OpType int
-
-const (
-  GET OpType = iota
-  PUT
-  APPEND
-)
-
-func (op OpType) String() string {
-  switch op {
-  case GET:return "GET"
-  case PUT:return "PUT"
-  case APPEND: return "APPEND"
-  default: return fmt.Sprint(int(op))
-  }
-}
-
-type Op struct {
-  Type OpType
-  Key string
-  Value string
-  TriggerId int64
-}
-
 
 func (kv *KVServer) Kill() {
   ctx,cancel:=context.WithCancel(kv.background)
@@ -130,11 +97,14 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 
+  kv.triggers = make(map[int64]Trigger)
 	kv.applyCh = make(chan raft.ApplyMsg)
-  kv.data = make(map[string]string)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
   kv.events = make(chan kvEvent, EventLoopLength)
   kv.background,kv.backgroundCancel = context.WithCancel(context.Background())
+  kv.stateMachine.data = make(map[string]string)
+  kv.stateMachine.sessions = make(map[int64]*Session)
+  kv.stateMachine.triggers = kv.triggers
 
 	// You may need initialization code here.
 

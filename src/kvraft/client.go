@@ -12,6 +12,14 @@ type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
   lastLeader int
+  sessionId int64
+  maxSeqNum int
+  n int
+}
+
+type Request struct {
+  result *string
+  CommandArgs
 }
 
 func nrand() int64 {
@@ -24,89 +32,85 @@ func nrand() int64 {
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
+  ck.n = len(servers)
 	// You'll have to add code here.
 	return ck
 }
 
-func (ck *Clerk) sendGet(peer int, args *GetArgs, reply *GetReply) bool {
-  return ck.servers[peer].Call("KVServer.Get", args, reply)
+func (ck *Clerk) genNewSession() {
+  ck.sessionId = nrand()
+  ck.maxSeqNum = 0
 }
 
-func (ck *Clerk) sendPutAppend(peer int, args *PutAppendArgs, reply *PutAppendReply) bool {
-  return ck.servers[peer].Call("KVServer.PutAppend", args, reply)
-}
-
-//
-// fetch the current value for a key.
-// returns "" if the key does not exist.
-// keeps trying forever in the face of all other errors.
-//
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
-func (ck *Clerk) Get(key string) string {
-  begin:=ck.lastLeader
-  for {
-    for i:=begin;i<len(ck.servers);i++ {
-      args:=GetArgs{key}
-      var reply GetReply
-      if ck.sendGet(i,&args,&reply) {
-        if reply.Err == ErrWrongLeader {
-          continue
-        }
-        ck.lastLeader = i
-        if reply.Err == OK {
-          return reply.Value
-        } else {
-          return ""
-        }
-      }
-    }
-    begin=0
+func (ck *Clerk) execute(request *Request) {
+  leader:=ck.lastLeader
+  defer func(){ ck.lastLeader = leader }()
+  updateRequest := func() {
+    request.SessionId = ck.sessionId
+    request.SeqNum = ck.maxSeqNum
+    ck.maxSeqNum++
   }
-}
-
-//
-// shared by Put and Append.
-//
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.PutAppend", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
-func (ck *Clerk) PutAppend(key string, value string, op string) {
-  begin:=ck.lastLeader
+  updateRequest()
+  DPrintf("%p %+v key \"%v\" value \"%v\" start", ck, request.Type, request.Key, request.Value)
+  defer DPrintf("%p %+v key \"%v\" value \"%v\" finish", ck, request.Type, request.Key, request.Value)
   for {
-    for i:=begin;i<len(ck.servers);i++ {
-      args:=PutAppendArgs{
-        Key: key,
-        Value: value,
-        Op: op,
-      }
-      var reply PutAppendReply
-      if ck.sendPutAppend(i, &args, &reply) {
-        if reply.Err == ErrWrongLeader {
-          continue
+    if leader == ck.n {
+      leader = 0
+    }
+    if ck.sessionId == 0 {
+      ck.genNewSession()
+      updateRequest()
+    }
+    var reply CommandReply
+    ok:=ck.servers[leader].Call("KVServer.CommandRequest", &request.CommandArgs, &reply)
+    // DPrintf("args %+v reply %+v", request, reply)
+    if ok {
+      switch reply.Err {
+      case OK:
+        if request.Type == GET {
+          *request.result = reply.Value
+        }
+        fallthrough
+      case ErrNoKey:
+        return
+      case ErrWrongLeader:
+        leader++
+      case ErrSessionExpired:
+        ck.sessionId = 0
+      case ErrExecuted:
+        if request.Type == GET {
+          request.SeqNum++
         } else {
-          ck.lastLeader = i
           return
         }
+      default:
+        DPrintf("%+v",reply.Err)
       }
     }
-    begin=0
   }
+}
 
+func (ck *Clerk) Get(key string) string {
+  var request Request
+  var ret string
+  request.result = &ret
+  request.Key = key
+  request.Type = GET
+  ck.execute(&request)
+  return ret
+}
+
+func (ck *Clerk) PutAppend(key, value string, opType OpType) {
+  var request Request
+  request.Key = key
+  request.Value = value
+  request.Type = opType
+  ck.execute(&request)
 }
 
 func (ck *Clerk) Put(key string, value string) {
-	ck.PutAppend(key, value, "Put")
+  ck.PutAppend(key,value,PUT)
 }
 func (ck *Clerk) Append(key string, value string) {
-	ck.PutAppend(key, value, "Append")
+  ck.PutAppend(key,value,APPEND)
 }

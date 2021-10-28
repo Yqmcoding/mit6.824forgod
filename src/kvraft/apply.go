@@ -19,38 +19,6 @@ type ApplyEvent struct {
   done context.CancelFunc
 }
 
-func (kv *KVServer) applyCommand(op Op) {
-  if v,ok:=kv.rpcTrigger[op.TriggerId]; ok {
-    defer delete(kv.rpcTrigger,op.TriggerId)
-    if v.cancel != nil {
-      defer v.cancel()
-    }
-    switch reply:=v.reply.(type) {
-    case *GetReply:
-      if v,ok:=kv.data[op.Key];ok {
-        reply.Value = v
-        reply.Err = OK
-      } else {
-        reply.Err = ErrNoKey
-      }
-    case *PutAppendReply:
-      reply.Err = OK
-    }
-  }
-  if op.Type == GET {
-  } else if op.Type == PUT {
-    kv.data[op.Key] = op.Value
-  } else if op.Type == APPEND {
-    if _,ok:=kv.data[op.Key]; ok {
-      kv.data[op.Key]+=op.Value
-    } else {
-      kv.data[op.Key]=op.Value
-    }
-  } else {
-    DPrintf("%v get unknown op %+v", kv.me, op)
-  }
-}
-
 func (e *ApplyEvent) Run(kv *KVServer) {
   if e.done != nil {
     defer e.done()
@@ -61,7 +29,9 @@ func (e *ApplyEvent) Run(kv *KVServer) {
       return
     } else if msg.CommandIndex == kv.lastApplied + 1 {
       if op,ok:=msg.Command.(Op); ok {
-        kv.applyCommand(op)
+        op.Index = msg.CommandIndex
+        kv.stateMachine.applyCommand(op)
+        defer kv.sendEvent(&RemoveTriggerEvent{triggerId: op.TriggerId, tryTimes: TriggerRemoveTryTimes})
         kv.lastApplied+=1
       }
     } else {
@@ -82,6 +52,6 @@ type ApplySnapshotEvent struct {
 }
 
 func (e *ApplySnapshotEvent) Run(kv *KVServer) {
-  kv.applySnapshot(e.snapshot)
+  kv.stateMachine.applySnapshot(e.snapshot)
   kv.lastApplied=e.index
 }

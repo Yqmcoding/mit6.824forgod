@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	_ "net/http/pprof"
+
 	"6.824/models"
 	"6.824/porcupine"
 )

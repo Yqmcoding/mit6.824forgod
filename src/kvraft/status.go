@@ -34,7 +34,6 @@ func (e *StatusChangeEvent) Run(kv *KVServer) {
       kv.leaderCancel()
     }
     kv.leaderCtx, kv.leaderCancel = context.WithCancel(kv.background)
-    kv.rpcTrigger = make(map[int64]rpcState)
   } else {
     if kv.leaderCancel == nil {
       DPrintf("%v wants to change to follower and leaderCancel is nil", kv.me)
@@ -42,6 +41,5 @@ func (e *StatusChangeEvent) Run(kv *KVServer) {
       kv.leaderCancel()
       kv.leaderCtx = nil
     }
-    kv.rpcTrigger = nil
   }
 }
