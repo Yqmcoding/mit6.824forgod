@@ -1095,36 +1095,36 @@ func TestSnapshotInstallUnCrash2D(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-  log.SetFlags(log.LstdFlags|log.Lmicroseconds)
-  go func() {
-    log.Println(http.ListenAndServe("0.0.0.0:6063", nil))
-  }()
-  ctx,cancel:=context.WithCancel(context.Background())
-  defer cancel()
-  go func(ctx context.Context){
-    for {
-      select {
-      case <-ctx.Done():return
-      default:
-      }
-      if runtime.NumGoroutine() > 6000 {
-        ctx,cancel:=context.WithCancel(context.Background())
-        go func(){
-          f,err:=os.Create("goroutines")
-          if err!=nil{
-            f=os.Stdout
-          } else {
-            defer f.Close()
-          }
-          pprof.Lookup("goroutine").WriteTo(f, 2)
-          cancel()
-        }()
-        <-ctx.Done()
-      }
-    }
-  }(ctx)
-  code:=m.Run()
-  cancel()
-  os.Exit(code)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	go func() {
+		log.Println(http.ListenAndServe("0.0.0.0:6063", nil))
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if runtime.NumGoroutine() > 6000 {
+				ctx, cancel := context.WithCancel(context.Background())
+				go func() {
+					f, err := os.Create("goroutines")
+					if err != nil {
+						f = os.Stdout
+					} else {
+						defer f.Close()
+					}
+					pprof.Lookup("goroutine").WriteTo(f, 2)
+					cancel()
+				}()
+				<-ctx.Done()
+			}
+		}
+	}(ctx)
+	code := m.Run()
+	cancel()
+	os.Exit(code)
 }
-
