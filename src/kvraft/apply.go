@@ -26,13 +26,16 @@ func (e *ApplyEvent) Run(kv *KVServer) {
   msg:=e.msg
   if msg.CommandValid {
     if msg.CommandIndex <= kv.lastApplied {
+      DPrintf("%v commandIndex <= kv.lastApplied, msg %+v lastApplied %v", kv.me, msg, kv.lastApplied)
       return
     } else if msg.CommandIndex == kv.lastApplied + 1 {
       if op,ok:=msg.Command.(Op); ok {
         op.Index = msg.CommandIndex
         kv.stateMachine.applyCommand(op)
-        defer kv.sendEvent(&RemoveTriggerEvent{triggerId: op.TriggerId, tryTimes: TriggerRemoveTryTimes})
+        defer kv.sendEvent(&RemoveTriggerEvent{triggerId: op.SessionId, tryTimes: TriggerRemoveTryTimes})
         kv.lastApplied+=1
+      } else {
+        DPrintf("%v unknown msg %+v", kv.me, msg)
       }
     } else {
       DPrintf("%v get wrong log %+v", kv.me, msg)

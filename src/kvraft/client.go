@@ -39,6 +39,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 
 func (ck *Clerk) genNewSession() {
   ck.sessionId = nrand()
+  // DPrintf("%p sessionId change to %v", ck, ck.sessionId)
   ck.maxSeqNum = 0
 }
 
@@ -51,8 +52,7 @@ func (ck *Clerk) execute(request *Request) {
     ck.maxSeqNum++
   }
   updateRequest()
-  DPrintf("%p %+v key \"%v\" value \"%v\" start", ck, request.Type, request.Key, request.Value)
-  defer DPrintf("%p %+v key \"%v\" value \"%v\" finish", ck, request.Type, request.Key, request.Value)
+  DPrintf("%p %+v key \"%v\" value \"%v\" start request %+v", ck, request.Type, request.Key, request.Value, request)
   for {
     if leader == ck.n {
       leader = 0
@@ -63,7 +63,6 @@ func (ck *Clerk) execute(request *Request) {
     }
     var reply CommandReply
     ok:=ck.servers[leader].Call("KVServer.CommandRequest", &request.CommandArgs, &reply)
-    // DPrintf("args %+v reply %+v", request, reply)
     if ok {
       switch reply.Err {
       case OK:
@@ -79,7 +78,7 @@ func (ck *Clerk) execute(request *Request) {
         ck.sessionId = 0
       case ErrExecuted:
         if request.Type == GET {
-          request.SeqNum++
+          updateRequest()
         } else {
           return
         }

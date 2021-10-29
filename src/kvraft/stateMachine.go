@@ -48,10 +48,11 @@ type StateMachine struct {
   data map[string]string
   sessions map[int64]*Session
   triggers map[int64]Trigger
+  me int
 }
 
 func (sm *StateMachine) execute(opType OpType, key string, value string, reply *CommandReply) {
-  // DPrintf("execute %+v key \"%v\" value \"%v\"", opType, key, value)
+  defer DPrintf("%v execute %+v key \"%v\" value \"%v\" reply %+v", sm.me, opType, key, value, reply)
   reply.Err = OK
   switch opType {
   case GET:
@@ -93,7 +94,7 @@ func (sm *StateMachine) createSession(sessionId int64) *Session {
   }
   session:=&Session{
     SessionId: sessionId,
-    SeqNum: -1,
+    SeqNum: 0,
   }
   if len(sm.sessions) >= MaxSessionNumber {
     sm.deleteSession()

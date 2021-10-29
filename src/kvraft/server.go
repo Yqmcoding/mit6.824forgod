@@ -105,6 +105,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
   kv.stateMachine.data = make(map[string]string)
   kv.stateMachine.sessions = make(map[int64]*Session)
   kv.stateMachine.triggers = kv.triggers
+  kv.stateMachine.me = kv.me
 
 	// You may need initialization code here.
 

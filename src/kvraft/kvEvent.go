@@ -9,6 +9,7 @@ func (kv *KVServer) eventLoop() {
     select {
     case event,ok:=<-kv.events:
       if ok {
+        DPrintf("%v run event %T%+v", kv.me, event, event)
         event.Run(kv)
       }
     case <-kv.background.Done():
