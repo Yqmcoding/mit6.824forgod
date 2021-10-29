@@ -30,9 +30,8 @@ func (e *ApplyEvent) Run(kv *KVServer) {
       return
     } else if msg.CommandIndex == kv.lastApplied + 1 {
       if op,ok:=msg.Command.(Op); ok {
-        op.Index = msg.CommandIndex
-        kv.stateMachine.applyCommand(op)
-        defer kv.sendEvent(&RemoveTriggerEvent{triggerId: op.SessionId, tryTimes: TriggerRemoveTryTimes})
+        kv.stateMachine.applyCommand(op, msg.CommandIndex)
+        defer kv.sendEvent(&RemoveTriggerEvent{triggerId: op.TriggerId, tryTimes: TriggerRemoveTryTimes})
         kv.lastApplied+=1
       } else {
         DPrintf("%v unknown msg %+v", kv.me, msg)

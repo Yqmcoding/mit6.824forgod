@@ -23,6 +23,7 @@ type CommandReply struct {
 
 func (kv *KVServer) CommandRequest(args *CommandArgs, reply *CommandReply) {
   DPrintf("%v get CommandRequest args %+v", kv.me, args)
+  defer DPrintf("%v CommandRequest args %+v reply %+v", kv.me, args, reply)
   triggerId:=atomic.AddInt64(&kv.TriggerCount,1)
   _,term,isLeader:=kv.rf.Start(Op{
     Type: args.Type,
@@ -60,6 +61,9 @@ type CommandRequestEvent struct {
 func (e *CommandRequestEvent) Run(kv *KVServer) {
   reply:=e.reply
   if kv.leaderCtx == nil || e.term != kv.term {
+    if e.term > kv.term {
+      reply.Err = ErrTimeout
+    }
     if e.done != nil {
       e.done()
     }

@@ -29,7 +29,6 @@ type Op struct {
   TriggerId int64
   SessionId int64
   SeqNum int
-  Index int
 }
 
 type Trigger struct {
@@ -103,7 +102,7 @@ func (sm *StateMachine) createSession(sessionId int64) *Session {
   return session
 }
 
-func (sm *StateMachine) applyCommand(op Op) {
+func (sm *StateMachine) applyCommand(op Op, index int) {
   var reply *CommandReply
   if trigger,ok:=sm.triggers[op.TriggerId]; ok {
     reply=trigger.reply
@@ -113,7 +112,7 @@ func (sm *StateMachine) applyCommand(op Op) {
   if session,ok:=sm.sessions[op.SessionId];ok {
     if op.SeqNum == session.SeqNum {
       sm.execute(op.Type, op.Key, op.Value, reply)
-      sm.updateSession(session, op.Index)
+      sm.updateSession(session, index)
     } else {
       reply.MaxProcessSeqNum = session.SeqNum
       reply.Err = ErrExecuted
@@ -121,7 +120,7 @@ func (sm *StateMachine) applyCommand(op Op) {
   } else if op.SeqNum == 0 {
     session:=sm.createSession(op.SessionId)
     sm.execute(op.Type, op.Key, op.Value, reply)
-    sm.updateSession(session, op.Index)
+    sm.updateSession(session, index)
   } else {
     reply.Err = ErrSessionExpired
   }
