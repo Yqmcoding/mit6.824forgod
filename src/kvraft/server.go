@@ -42,7 +42,6 @@ type KVServer struct {
   lastApplied int
 
   triggers map[int64]Trigger
-  TriggerCount int64
 }
 
 func (kv *KVServer) Kill() {

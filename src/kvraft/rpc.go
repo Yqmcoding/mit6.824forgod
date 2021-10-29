@@ -2,8 +2,6 @@ package kvraft
 
 import (
 	"context"
-	"sync/atomic"
-	"time"
 )
 
 // SeqNum==0 register session
@@ -24,12 +22,10 @@ type CommandReply struct {
 func (kv *KVServer) CommandRequest(args *CommandArgs, reply *CommandReply) {
   DPrintf("%v get CommandRequest args %+v", kv.me, args)
   defer DPrintf("%v CommandRequest args %+v reply %+v", kv.me, args, reply)
-  triggerId:=atomic.AddInt64(&kv.TriggerCount,1)
   _,term,isLeader:=kv.rf.Start(Op{
     Type: args.Type,
     Key: args.Key,
     Value: args.Value,
-    TriggerId: triggerId,
     SessionId: args.SessionId,
     SeqNum: args.SeqNum,
   })
@@ -38,12 +34,13 @@ func (kv *KVServer) CommandRequest(args *CommandArgs, reply *CommandReply) {
   if !isLeader {
     return
   }
-  ctx,cancel:=context.WithTimeout(kv.background, ServerRpcTimeout)
+  // ctx,cancel:=context.WithTimeout(kv.background, ServerRpcTimeout)
+  ctx,cancel:=context.WithCancel(kv.background)
   go kv.sendEvent(&CommandRequestEvent{
+    args: args,
     reply:reply,
     done: cancel,
     term: term,
-    triggerId: triggerId,
   })
   <-ctx.Done()
   if ctx.Err() == context.DeadlineExceeded {
@@ -52,14 +49,14 @@ func (kv *KVServer) CommandRequest(args *CommandArgs, reply *CommandReply) {
 }
 
 type CommandRequestEvent struct {
+  args *CommandArgs
   reply *CommandReply
   done context.CancelFunc
   term int
-  triggerId int64
 }
 
 func (e *CommandRequestEvent) Run(kv *KVServer) {
-  reply:=e.reply
+  args,reply:=e.args,e.reply
   if kv.leaderCtx == nil || e.term != kv.term {
     if e.term > kv.term {
       reply.Err = ErrTimeout
@@ -69,7 +66,8 @@ func (e *CommandRequestEvent) Run(kv *KVServer) {
     }
     return
   }
-  nctx,cancel:=context.WithTimeout(kv.leaderCtx, ServerRpcTimeout)
+  // nctx,cancel:=context.WithTimeout(kv.leaderCtx, ServerRpcTimeout)
+  nctx,cancel:=context.WithCancel(kv.leaderCtx)
   go func() {
     if e.done != nil {
       defer e.done()
@@ -77,29 +75,18 @@ func (e *CommandRequestEvent) Run(kv *KVServer) {
     <-nctx.Done()
   }()
   trigger:=Trigger{
-    triggerId: e.triggerId,
+    SessionId: args.SessionId,
     done: cancel,
     reply: reply,
   }
-  kv.triggers[trigger.triggerId]=trigger
+  kv.triggers[trigger.SessionId]=trigger
 }
 
-type RemoveTriggerEvent struct {
-  triggerId int64
-  tryTimes int
-}
-
-func (e *RemoveTriggerEvent) Run(kv *KVServer) {
-  e.tryTimes--
-  if trigger,ok:=kv.triggers[e.triggerId]; ok {
+func (kv *KVServer) removeTrigger(sessionId int64) {
+  if trigger,ok:=kv.triggers[sessionId]; ok {
     if trigger.done != nil {
       trigger.done()
     }
-    delete(kv.triggers,e.triggerId)
-  } else if e.tryTimes > 0 {
-    go func() {
-      time.Sleep(ServerRpcTimeout)
-      go kv.sendEvent(e)
-    }()
+    delete(kv.triggers,sessionId)
   }
 }

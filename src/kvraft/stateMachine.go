@@ -26,13 +26,12 @@ type Op struct {
   Type OpType
   Key string
   Value string
-  TriggerId int64
   SessionId int64
   SeqNum int
 }
 
 type Trigger struct {
-  triggerId int64
+  SessionId int64
   done context.CancelFunc
   reply *CommandReply
 }
@@ -104,7 +103,7 @@ func (sm *StateMachine) createSession(sessionId int64) *Session {
 
 func (sm *StateMachine) applyCommand(op Op, index int) {
   var reply *CommandReply
-  if trigger,ok:=sm.triggers[op.TriggerId]; ok {
+  if trigger,ok:=sm.triggers[op.SessionId]; ok {
     reply=trigger.reply
   } else {
     reply=&CommandReply{}
