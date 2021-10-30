@@ -30,8 +30,7 @@ func (e *ApplyEvent) Run(kv *KVServer) {
       return
     } else if msg.CommandIndex == kv.lastApplied + 1 {
       if op,ok:=msg.Command.(Op); ok {
-        kv.stateMachine.applyCommand(op, msg.CommandIndex)
-        defer kv.removeTrigger(op.SessionId)
+        kv.store.applyCommand(op)
         kv.lastApplied+=1
       } else {
         DPrintf("%v unknown msg %+v", kv.me, msg)
@@ -54,6 +53,6 @@ type ApplySnapshotEvent struct {
 }
 
 func (e *ApplySnapshotEvent) Run(kv *KVServer) {
-  kv.stateMachine.applySnapshot(e.snapshot)
+  kv.store.applySnapshot(e.snapshot)
   kv.lastApplied=e.index
 }

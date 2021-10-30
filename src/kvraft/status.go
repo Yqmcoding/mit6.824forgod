@@ -42,4 +42,5 @@ func (e *StatusChangeEvent) Run(kv *KVServer) {
       kv.leaderCtx = nil
     }
   }
+  go kv.store.updateState(e.term, e.isLeader)
 }

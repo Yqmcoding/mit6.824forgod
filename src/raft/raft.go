@@ -156,12 +156,14 @@ func (rf *Raft) persist() {
 	if rf.killed() {
 		return
 	}
+  DPrintf("%v begin persist", rf.me)
 	buffer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(buffer)
 	encoder.Encode(rf.RaftPersistState)
 	data := buffer.Bytes()
 	DPrintf("%v data length %v", rf.me, len(data))
 	rf.persister.SaveRaftState(data)
+  DPrintf("%v save data", rf.me)
 }
 
 //

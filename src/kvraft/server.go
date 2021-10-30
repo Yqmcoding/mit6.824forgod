@@ -3,6 +3,8 @@ package kvraft
 import (
 	"context"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -11,7 +13,18 @@ import (
 	"6.824/raft"
 )
 
-const Debug = true
+// Debugging
+var Debug bool = false
+
+func init() {
+  debug:=os.Getenv("debug")
+  debugFlags:=strings.Split(debug,",")
+  for _,flag := range debugFlags {
+    if flag == "kvraft"{
+      Debug = true
+    }
+  }
+}
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -31,7 +44,7 @@ type KVServer struct {
 
 	// Your definitions here.
 
-  stateMachine StateMachine
+  store *KVStore
 
   background context.Context
   backgroundCancel context.CancelFunc
@@ -41,7 +54,6 @@ type KVServer struct {
   term int
   lastApplied int
 
-  triggers map[int64]Trigger
 }
 
 func (kv *KVServer) Kill() {
@@ -96,15 +108,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 
-  kv.triggers = make(map[int64]Trigger)
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
   kv.events = make(chan kvEvent, EventLoopLength)
   kv.background,kv.backgroundCancel = context.WithCancel(context.Background())
-  kv.stateMachine.data = make(map[string]string)
-  kv.stateMachine.sessions = make(map[int64]*Session)
-  kv.stateMachine.triggers = kv.triggers
-  kv.stateMachine.me = kv.me
+  kv.store = MakeKvStore(me)
 
 	// You may need initialization code here.
 

@@ -73,6 +73,8 @@ func (ck *Clerk) execute(request *Request) {
       case ErrNoKey:
         return
       case ErrWrongLeader:
+        fallthrough
+      case ErrTimeout:
         leader++
       case ErrSessionExpired:
         ck.sessionId = 0
@@ -85,6 +87,8 @@ func (ck *Clerk) execute(request *Request) {
       default:
         DPrintf("%+v",reply.Err)
       }
+    } else {
+      leader++
     }
   }
 }

@@ -1,9 +1,5 @@
 package kvraft
 
-import (
-	"context"
-)
-
 // SeqNum==0 register session
 type CommandArgs struct {
   SessionId int64
@@ -16,7 +12,6 @@ type CommandArgs struct {
 type CommandReply struct {
   Err Err
   Value string
-  MaxProcessSeqNum int
 }
 
 func (kv *KVServer) CommandRequest(args *CommandArgs, reply *CommandReply) {
@@ -30,63 +25,14 @@ func (kv *KVServer) CommandRequest(args *CommandArgs, reply *CommandReply) {
     SeqNum: args.SeqNum,
   })
   DPrintf("%v call kv.Start finish", kv.me)
-  reply.Err = ErrWrongLeader
   if !isLeader {
+    reply.Err = ErrWrongLeader
     return
   }
-  // ctx,cancel:=context.WithTimeout(kv.background, ServerRpcTimeout)
-  ctx,cancel:=context.WithCancel(kv.background)
-  go kv.sendEvent(&CommandRequestEvent{
-    args: args,
-    reply:reply,
-    done: cancel,
-    term: term,
-  })
-  <-ctx.Done()
-  if ctx.Err() == context.DeadlineExceeded {
-    reply.Err = ErrTimeout
+  queryResult:=kv.store.query(args.SessionId, args.SeqNum, term)
+  if queryResult.ctx != nil {
+    <-queryResult.ctx.Done()
   }
-}
-
-type CommandRequestEvent struct {
-  args *CommandArgs
-  reply *CommandReply
-  done context.CancelFunc
-  term int
-}
-
-func (e *CommandRequestEvent) Run(kv *KVServer) {
-  args,reply:=e.args,e.reply
-  if kv.leaderCtx == nil || e.term != kv.term {
-    if e.term > kv.term {
-      reply.Err = ErrTimeout
-    }
-    if e.done != nil {
-      e.done()
-    }
-    return
-  }
-  // nctx,cancel:=context.WithTimeout(kv.leaderCtx, ServerRpcTimeout)
-  nctx,cancel:=context.WithCancel(kv.leaderCtx)
-  go func() {
-    if e.done != nil {
-      defer e.done()
-    }
-    <-nctx.Done()
-  }()
-  trigger:=Trigger{
-    SessionId: args.SessionId,
-    done: cancel,
-    reply: reply,
-  }
-  kv.triggers[trigger.SessionId]=trigger
-}
-
-func (kv *KVServer) removeTrigger(sessionId int64) {
-  if trigger,ok:=kv.triggers[sessionId]; ok {
-    if trigger.done != nil {
-      trigger.done()
-    }
-    delete(kv.triggers,sessionId)
-  }
+  reply.Err = queryResult.Err
+  reply.Value = queryResult.result
 }
