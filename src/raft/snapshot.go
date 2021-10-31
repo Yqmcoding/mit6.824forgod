@@ -56,7 +56,7 @@ type SnapshotEvent struct {
 func (e *SnapshotEvent) Run(rf *Raft) {
 	log, err := rf.getLogByIndex(e.index)
 	if err != nil {
-		panic(fmt.Sprintf("%v fail to snapshot with index %v Log %+v", rf.me, e.index, LogsOutline(rf.Log)))
+		panic(fmt.Sprintf("%v fail to snapshot with index %v Log %+v err %+v", rf.me, e.index, LogsOutline(rf.Log), err))
 	}
 	rf.changeSnapshot(log.Index, log.Term, e.snapshot)
 }
@@ -162,7 +162,7 @@ func (e *RespondInstallSnapshotEvent) Run(rf *Raft) {
 }
 
 func (rf *Raft) changeSnapshot(index int, term int, snapshot []byte) {
-	defer rf.persist()
+	defer rf.persist(true)
 	defer rf.updateLastLog()
 	rf.removeLogFromBegin(index + 1)
 	rf.LastIncludedIndex = index

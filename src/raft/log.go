@@ -67,7 +67,7 @@ func (rf *Raft) appendLog(logs []RaftLog) {
 	if len(logs) == 0 {
 		return
 	}
-	defer rf.persist()
+	defer rf.persist(false)
 	defer rf.updateLastLog()
 	beginIdx := rf.getRealLogIndex(logs[0].Index)
 	for i := range logs {
