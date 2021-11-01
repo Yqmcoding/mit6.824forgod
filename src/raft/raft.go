@@ -49,7 +49,7 @@ type ApplyMsg struct {
 
 	// For 2D:
 	SnapshotValid bool
-	Snapshot      []byte
+	Snapshot      Snapshot
 	SnapshotTerm  int
 	SnapshotIndex int
 }
@@ -105,7 +105,7 @@ type Raft struct {
 	maxProcessId      int
 	quickSend         []chan struct{}
 
-	CurrentSnapshot   []byte
+	CurrentSnapshot   Snapshot
 	RaftPersistState
 
 	RaftLeaderState
@@ -186,7 +186,8 @@ func (rf *Raft) readPersist(data []byte) {
 	rf.RaftPersistState = raftPersistState
 	rf.updateLastLog()
 	if rf.LastIncludedIndex != -1 {
-		go rf.sendEvent(&SnapshotEvent{rf.LastIncludedIndex, rf.CurrentSnapshot})
+    var tmp bool
+		go rf.sendEvent(&SnapshotEvent{rf.LastIncludedIndex, rf.CurrentSnapshot, &tmp, nil})
 	}
 }
 
@@ -398,6 +399,7 @@ func (rf *Raft) applyLoop(applyCh chan ApplyMsg) {
 			if ok {
 				select {
 				case applyCh <- msg:
+			    DPrintf("%v apply %+v", rf.me, msg)
 				case <-rf.background.Done():
 					return
 				}

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"6.824/labgob"
+	"6.824/raft"
 )
 
 type OpType int
@@ -52,26 +55,43 @@ type QueryResult struct {
 
 type KVStore struct {
   mu sync.Mutex
+  dead bool
   data map[string]string
   sessions map[int64]*Session
   triggers map[int64]*Trigger
   me int
   term int
   isLeader bool
+  background context.Context
+  cancel context.CancelFunc
 }
 
 func MakeKvStore(me int) *KVStore {
+  labgob.Register(Session{})
   kvs:=new(KVStore)
   kvs.me = me
   kvs.data = make(map[string]string)
   kvs.sessions = make(map[int64]*Session)
   kvs.triggers = make(map[int64]*Trigger)
+  kvs.background, kvs.cancel = context.WithCancel(context.Background())
   return kvs
+}
+
+func (kvs *KVStore) Kill() {
+  kvs.mu.Lock()
+  defer kvs.mu.Unlock()
+  kvs.dead=true
+  kvs.cancel()
+}
+
+func (kvs *KVStore) killed() bool {
+  return kvs.dead
 }
 
 func (kvs *KVStore) applyCommand(op Op) {
   kvs.mu.Lock()
   defer kvs.mu.Unlock()
+  if kvs.killed() { return }
   if _,ok:=kvs.sessions[op.SessionId]; !ok {
     kvs.sessions[op.SessionId] = &Session{
       SessionId: op.SessionId,
@@ -117,9 +137,11 @@ func (kvs *KVStore) applyCommand(op Op) {
   }
 }
 
-func (kvs *KVStore) applySnapshot(snapshot []byte) {
+func (kvs *KVStore) applySnapshot(snapshot raft.Snapshot) {
   kvs.mu.Lock()
   defer kvs.mu.Unlock()
+  if kvs.killed() { return }
+  kvs.readSnapshot(snapshot)
 }
 
 func (kvs *KVStore) updateState(term int, isLeader bool) {
@@ -161,7 +183,7 @@ func (kvs *KVStore) query(sessionId int64, seqNum int, term int) *QueryResult {
   } else if term < kvs.term || term == kvs.term && !kvs.isLeader {
     ret.Err=ErrWrongLeader
   } else {
-    ctx,cancel:=context.WithCancel(context.TODO())
+    ctx,cancel:=context.WithCancel(kvs.background)
     kvs.triggers[sessionId]=&Trigger{
       cancel: cancel,
       result: &ret,

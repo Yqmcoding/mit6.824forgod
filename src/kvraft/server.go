@@ -39,6 +39,7 @@ type KVServer struct {
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
 	dead    int32 // set by Kill()
+  persister *raft.Persister
 
 	maxraftstate int // snapshot if log grows this big
 
@@ -54,6 +55,7 @@ type KVServer struct {
   term int
   lastApplied int
 
+  snapshotFinish context.CancelFunc
 }
 
 func (kv *KVServer) Kill() {
@@ -75,7 +77,8 @@ func (e *KillEvent) Run(kv *KVServer) {
   if kv.leaderCancel != nil {
     kv.leaderCancel()
   }
-	kv.rf.Kill()
+	go kv.rf.Kill()
+  go kv.store.Kill()
   kv.backgroundCancel()
 }
 
@@ -105,6 +108,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
+  kv.persister = persister
 
 	// You may need initialization code here.
 
@@ -114,11 +118,15 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
   kv.background,kv.backgroundCancel = context.WithCancel(context.Background())
   kv.store = MakeKvStore(me)
 
+  ctx,cancel:=context.WithCancel(kv.background)
+  kv.snapshotFinish = cancel
+
 	// You may need initialization code here.
 
   go kv.eventLoop()
   go kv.applyLoop()
   go kv.statusLoop()
+  go kv.snapshotLoop(ctx)
 
 	return kv
 }

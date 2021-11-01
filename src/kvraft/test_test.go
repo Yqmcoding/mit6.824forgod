@@ -731,8 +731,12 @@ func TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B(t *testing.T
 
 func TestMain(m *testing.M) {
   log.SetFlags(log.LstdFlags|log.Lmicroseconds)
+  port:=os.Getenv("PORT")
+  if port == "" {
+    port="6060"
+  }
   go func() {
-    log.Println(http.ListenAndServe("0.0.0.0:6061", nil))
+    log.Println(http.ListenAndServe("0.0.0.0:"+port, nil))
   }()
   ctx,cancel:=context.WithCancel(context.Background())
   defer cancel()

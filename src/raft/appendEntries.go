@@ -188,11 +188,13 @@ func (e *RespondAppendEntriesEvent) Run(rf *Raft) {
 		rf.maxProcessId = args.Id
 		rf.appendLog(args.Entries)
 		if args.LeaderCommit > rf.commitIndex {
+      preLeaderCommit:=rf.commitIndex
 			if args.LeaderCommit > rf.getLastLogIndex() {
 				rf.commitIndex = rf.getLastLogIndex()
 			} else {
 				rf.commitIndex = args.LeaderCommit
 			}
+      DPrintf("%v commitIndex change from %v to %v", rf.me, preLeaderCommit, rf.commitIndex)
 		}
 	}
 }

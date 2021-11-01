@@ -5,11 +5,21 @@ import (
 	"fmt"
 )
 
+type Snapshot []byte
+
+func (s *Snapshot) String() string {
+  if s == nil {
+    return fmt.Sprint(nil)
+  } else {
+    return fmt.Sprintf("Snapshot{[%v ... %v] length %v}", (*s)[0], (*s)[len(*s)-1], len(*s))
+  }
+}
+
 //
 // A service wants to switch to snapshot.  Only do so if Raft hasn't
 // have more recent info since it communicate the snapshot on applyCh.
 //
-func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
+func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot Snapshot) bool {
 
 	// Your code here (2D).
 	var result bool
@@ -22,7 +32,7 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 type CondInstallSnapshotEvent struct {
 	lastIncludedIndex int
 	lastIncludedTerm  int
-	snapshot          []byte
+	snapshot          Snapshot
 	result            *bool
 	finish            context.CancelFunc
 }
@@ -43,20 +53,40 @@ func (e *CondInstallSnapshotEvent) Run(rf *Raft) {
 // all info up to and including index. this means the
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
+func (rf *Raft) Snapshot(index int, snapshot Snapshot) bool {
 	// Your code here (2D).
-	go rf.sendEvent(&SnapshotEvent{index, snapshot})
+  DPrintf("%v call snapshot index %v", rf.me, index)
+  ctx,cancel:=context.WithCancel(rf.background)
+  var ret bool
+	go rf.sendEvent(&SnapshotEvent{index, snapshot, &ret, cancel})
+  <-ctx.Done()
+  if ret {
+    DPrintf("%v agree to snapshot with index %v", rf.me, index)
+  } else {
+    DPrintf("%v refuse to snapshot with index %v", rf.me, index)
+  }
+  return ret
 }
 
 type SnapshotEvent struct {
 	index    int
-	snapshot []byte
+	snapshot Snapshot
+  result *bool
+  done context.CancelFunc
 }
 
 func (e *SnapshotEvent) Run(rf *Raft) {
+  if e.done != nil {
+    defer e.done()
+  }
+  if rf.snapshotInstalling || e.index < rf.LastIncludedIndex {
+    *e.result=false
+    return
+  }
+  *e.result=true
 	log, err := rf.getLogByIndex(e.index)
 	if err != nil {
-		panic(fmt.Sprintf("%v fail to snapshot with index %v Log %+v err %+v", rf.me, e.index, LogsOutline(rf.Log), err))
+		panic(fmt.Sprintf("%v fail to snapshot with index %v Log %+v err %+v", rf.me, e.index, rf.Log, err))
 	}
 	rf.changeSnapshot(log.Index, log.Term, e.snapshot)
 }
@@ -68,7 +98,7 @@ type InstallSnapshotArgs struct {
 	LeaderId          int
 	LastIncludedTerm  int
 	LastIncludedIndex int
-	Data              []byte
+	Data              Snapshot
 }
 
 type InstallSnapshotReply struct {
@@ -79,7 +109,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	if rf.killed() {
 		return
 	}
-	DPrintf("%v get Snapshot rpc from %v args %+v", rf.me, args.LeaderId, args)
+	// DPrintf("%v get Snapshot rpc from %v args %+v", rf.me, args.LeaderId, args)
 	ctx, cancel := context.WithCancel(rf.background)
 	go rf.sendEvent(&RespondInstallSnapshotEvent{args, reply, cancel})
 	<-ctx.Done()
@@ -161,7 +191,7 @@ func (e *RespondInstallSnapshotEvent) Run(rf *Raft) {
 	rf.changeSnapshot(args.LastIncludedIndex, args.LastIncludedTerm, args.Data)
 }
 
-func (rf *Raft) changeSnapshot(index int, term int, snapshot []byte) {
+func (rf *Raft) changeSnapshot(index int, term int, snapshot Snapshot) {
 	defer rf.persist(true)
 	defer rf.updateLastLog()
 	rf.removeLogFromBegin(index + 1)

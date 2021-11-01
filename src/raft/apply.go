@@ -26,7 +26,6 @@ func (e *ApplyEvent) Run(rf *Raft) {
 		}
 		select {
 		case rf.applyCh <- msg:
-			DPrintf("%v apply %+v", rf.me, msg)
 			rf.applied++
 		default:
 			DPrintf("%v applyCh blocked, wait and resend", rf.me)
