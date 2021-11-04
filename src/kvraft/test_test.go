@@ -394,9 +394,9 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 
 // Check that ops are committed fast enough, better than 1 per heartbeat interval
 func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
-  if os.Getenv("SLOW") != "" {
-    t.Skip("do not run speed test on slow machine")
-  }
+	if os.Getenv("SLOW") != "" {
+		t.Skip("do not run speed test on slow machine")
+	}
 	const nservers = 3
 	const numOps = 1000
 	cfg := make_config(t, nservers, false, maxraftstate)
@@ -730,40 +730,40 @@ func TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B(t *testing.T
 }
 
 func TestMain(m *testing.M) {
-  log.SetFlags(log.LstdFlags|log.Lmicroseconds)
-  port:=os.Getenv("PORT")
-  if port == "" {
-    port="6060"
-  }
-  go func() {
-    log.Println(http.ListenAndServe("0.0.0.0:"+port, nil))
-  }()
-  ctx,cancel:=context.WithCancel(context.Background())
-  defer cancel()
-  go func(ctx context.Context){
-    for {
-      select {
-      case <-ctx.Done():return
-      default:
-      }
-      if runtime.NumGoroutine() > 6000 {
-        ctx,cancel:=context.WithCancel(context.Background())
-        go func(){
-          f,err:=os.Create("goroutines")
-          if err!=nil{
-            f=os.Stdout
-          } else {
-            defer f.Close()
-          }
-          pprof.Lookup("goroutine").WriteTo(f, 2)
-          cancel()
-        }()
-        <-ctx.Done()
-      }
-    }
-  }(ctx)
-  code:=m.Run()
-  cancel()
-  os.Exit(code)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "6060"
+	}
+	go func() {
+		log.Println(http.ListenAndServe("0.0.0.0:"+port, nil))
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if runtime.NumGoroutine() > 6000 {
+				ctx, cancel := context.WithCancel(context.Background())
+				go func() {
+					f, err := os.Create("goroutines")
+					if err != nil {
+						f = os.Stdout
+					} else {
+						defer f.Close()
+					}
+					pprof.Lookup("goroutine").WriteTo(f, 2)
+					cancel()
+				}()
+				<-ctx.Done()
+			}
+		}
+	}(ctx)
+	code := m.Run()
+	cancel()
+	os.Exit(code)
 }
-

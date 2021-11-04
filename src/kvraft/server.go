@@ -17,13 +17,13 @@ import (
 var Debug bool = false
 
 func init() {
-  debug:=os.Getenv("debug")
-  debugFlags:=strings.Split(debug,",")
-  for _,flag := range debugFlags {
-    if flag == "kvraft"{
-      Debug = true
-    }
-  }
+	debug := os.Getenv("debug")
+	debugFlags := strings.Split(debug, ",")
+	for _, flag := range debugFlags {
+		if flag == "kvraft" {
+			Debug = true
+		}
+	}
 }
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
@@ -34,52 +34,52 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 }
 
 type KVServer struct {
-	mu      sync.Mutex
-	me      int
-	rf      *raft.Raft
-	applyCh chan raft.ApplyMsg
-	dead    int32 // set by Kill()
-  persister *raft.Persister
+	mu        sync.Mutex
+	me        int
+	rf        *raft.Raft
+	applyCh   chan raft.ApplyMsg
+	dead      int32 // set by Kill()
+	persister *raft.Persister
 
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
 
-  store *KVStore
+	store *KVStore
 
-  background context.Context
-  backgroundCancel context.CancelFunc
-  leaderCtx context.Context
-  leaderCancel context.CancelFunc
-  events chan kvEvent
-  term int
-  lastApplied int
+	background       context.Context
+	backgroundCancel context.CancelFunc
+	leaderCtx        context.Context
+	leaderCancel     context.CancelFunc
+	events           chan kvEvent
+	term             int
+	lastApplied      int
 
-  snapshotFinish context.CancelFunc
+	snapshotFinish context.CancelFunc
 }
 
 func (kv *KVServer) Kill() {
-  ctx,cancel:=context.WithCancel(kv.background)
-  kv.sendEvent(&KillEvent{cancel})
-  <-ctx.Done()
-  DPrintf("%v killed", kv.me)
+	ctx, cancel := context.WithCancel(kv.background)
+	kv.sendEvent(&KillEvent{cancel})
+	<-ctx.Done()
+	DPrintf("%v killed", kv.me)
 }
 
 type KillEvent struct {
-  done context.CancelFunc
+	done context.CancelFunc
 }
 
 func (e *KillEvent) Run(kv *KVServer) {
-  if e.done != nil {
-    defer e.done()
-  }
+	if e.done != nil {
+		defer e.done()
+	}
 	atomic.StoreInt32(&kv.dead, 1)
-  if kv.leaderCancel != nil {
-    kv.leaderCancel()
-  }
+	if kv.leaderCancel != nil {
+		kv.leaderCancel()
+	}
 	go kv.rf.Kill()
-  go kv.store.Kill()
-  kv.backgroundCancel()
+	go kv.store.Kill()
+	kv.backgroundCancel()
 }
 
 func (kv *KVServer) killed() bool {
@@ -108,25 +108,25 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv := new(KVServer)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
-  kv.persister = persister
+	kv.persister = persister
 
 	// You may need initialization code here.
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-  kv.events = make(chan kvEvent, EventLoopLength)
-  kv.background,kv.backgroundCancel = context.WithCancel(context.Background())
-  kv.store = MakeKvStore(me)
+	kv.events = make(chan kvEvent, EventLoopLength)
+	kv.background, kv.backgroundCancel = context.WithCancel(context.Background())
+	kv.store = MakeKvStore(me)
 
-  ctx,cancel:=context.WithCancel(kv.background)
-  kv.snapshotFinish = cancel
+	ctx, cancel := context.WithCancel(kv.background)
+	kv.snapshotFinish = cancel
 
 	// You may need initialization code here.
 
-  go kv.eventLoop()
-  go kv.applyLoop()
-  go kv.statusLoop()
-  go kv.snapshotLoop(ctx)
+	go kv.eventLoop()
+	go kv.applyLoop()
+	go kv.statusLoop()
+	go kv.snapshotLoop(ctx)
 
 	return kv
 }

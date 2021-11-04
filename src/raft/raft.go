@@ -105,7 +105,7 @@ type Raft struct {
 	maxProcessId      int
 	quickSend         []chan struct{}
 
-	CurrentSnapshot   Snapshot
+	CurrentSnapshot Snapshot
 	RaftPersistState
 
 	RaftLeaderState
@@ -157,17 +157,17 @@ func (rf *Raft) persist(snapshot bool) {
 	if rf.killed() {
 		return
 	}
-  DPrintf("%v begin persist", rf.me)
+	DPrintf("%v begin persist", rf.me)
 	buffer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(buffer)
 	encoder.Encode(rf.RaftPersistState)
 	data := buffer.Bytes()
 	DPrintf("%v data length %v", rf.me, len(data))
-  if snapshot {
-    rf.persister.SaveStateAndSnapshot(data, rf.CurrentSnapshot)
-  } else {
-    rf.persister.SaveRaftState(data)
-  }
+	if snapshot {
+		rf.persister.SaveStateAndSnapshot(data, rf.CurrentSnapshot)
+	} else {
+		rf.persister.SaveRaftState(data)
+	}
 }
 
 //
@@ -186,7 +186,7 @@ func (rf *Raft) readPersist(data []byte) {
 	rf.RaftPersistState = raftPersistState
 	rf.updateLastLog()
 	if rf.LastIncludedIndex != -1 {
-    var tmp bool
+		var tmp bool
 		go rf.sendEvent(&SnapshotEvent{rf.LastIncludedIndex, rf.CurrentSnapshot, &tmp, nil})
 	}
 }
@@ -399,7 +399,7 @@ func (rf *Raft) applyLoop(applyCh chan ApplyMsg) {
 			if ok {
 				select {
 				case applyCh <- msg:
-			    DPrintf("%v apply %+v", rf.me, msg)
+					DPrintf("%v apply %+v", rf.me, msg)
 				case <-rf.background.Done():
 					return
 				}
@@ -430,7 +430,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// Your initialization code here (2A, 2B, 2C).
 
 	// initialize from state persisted before a crash
-  rf.CurrentSnapshot = rf.persister.ReadSnapshot()
+	rf.CurrentSnapshot = rf.persister.ReadSnapshot()
 	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections

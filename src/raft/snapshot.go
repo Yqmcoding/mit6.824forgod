@@ -8,11 +8,11 @@ import (
 type Snapshot []byte
 
 func (s *Snapshot) String() string {
-  if s == nil {
-    return fmt.Sprint(nil)
-  } else {
-    return fmt.Sprintf("Snapshot{[%v ... %v] length %v}", (*s)[0], (*s)[len(*s)-1], len(*s))
-  }
+	if s == nil {
+		return fmt.Sprint(nil)
+	} else {
+		return fmt.Sprintf("Snapshot{[%v ... %v] length %v}", (*s)[0], (*s)[len(*s)-1], len(*s))
+	}
 }
 
 //
@@ -55,35 +55,35 @@ func (e *CondInstallSnapshotEvent) Run(rf *Raft) {
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot Snapshot) bool {
 	// Your code here (2D).
-  DPrintf("%v call snapshot index %v", rf.me, index)
-  ctx,cancel:=context.WithCancel(rf.background)
-  var ret bool
+	DPrintf("%v call snapshot index %v", rf.me, index)
+	ctx, cancel := context.WithCancel(rf.background)
+	var ret bool
 	go rf.sendEvent(&SnapshotEvent{index, snapshot, &ret, cancel})
-  <-ctx.Done()
-  if ret {
-    DPrintf("%v agree to snapshot with index %v", rf.me, index)
-  } else {
-    DPrintf("%v refuse to snapshot with index %v", rf.me, index)
-  }
-  return ret
+	<-ctx.Done()
+	if ret {
+		DPrintf("%v agree to snapshot with index %v", rf.me, index)
+	} else {
+		DPrintf("%v refuse to snapshot with index %v", rf.me, index)
+	}
+	return ret
 }
 
 type SnapshotEvent struct {
 	index    int
 	snapshot Snapshot
-  result *bool
-  done context.CancelFunc
+	result   *bool
+	done     context.CancelFunc
 }
 
 func (e *SnapshotEvent) Run(rf *Raft) {
-  if e.done != nil {
-    defer e.done()
-  }
-  if rf.snapshotInstalling || e.index < rf.LastIncludedIndex {
-    *e.result=false
-    return
-  }
-  *e.result=true
+	if e.done != nil {
+		defer e.done()
+	}
+	if rf.snapshotInstalling || e.index < rf.LastIncludedIndex {
+		*e.result = false
+		return
+	}
+	*e.result = true
 	log, err := rf.getLogByIndex(e.index)
 	if err != nil {
 		panic(fmt.Sprintf("%v fail to snapshot with index %v Log %+v err %+v", rf.me, e.index, rf.Log, err))
